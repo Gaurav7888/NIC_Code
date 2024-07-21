@@ -6,5 +6,5 @@ Download the Telugu dataset here: [Telugu Dataset](https://cvit.iiit.ac.in/image
 
 For more information about the dataset, visit the [official website](https://cvit.iiit.ac.in/research/projects/cvit-projects/indic-hw-data).
 
-![Example Image](images/example.jpg)
+![Example Image](static/nic.jpg)
 
