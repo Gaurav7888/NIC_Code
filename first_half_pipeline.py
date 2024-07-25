@@ -64,8 +64,8 @@ class model_final(nn.Module):
 
         # Merge the result and pass the
         self.dropout = nn.Dropout(dp_rate)
-        self.linear1 = nn.Linear(4096, 500)
-        self.linear2 = nn.Linear(500,1)
+        self.linear1 = nn.Linear(4096, 1000)
+        self.linear2 = nn.Linear(1000,500)
 
     def forward(self, trans_b, res_b):
         # Get intermediate outputs using hidden layer
@@ -90,37 +90,38 @@ class model_final(nn.Module):
 
 model = model_final(model_trans_top, trans_layer_norm, model_Res, dp_rate = 0.3)
 
-# Set up optimizer and learing rate scheduel
-params = [param for param in list(model.parameters()) if param.requires_grad]
-optimizer = torch.optim.SGD(params, lr=1e-7, momentum=0.2)
-lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, 
-    mode='min', 
-    factor=0.1, 
-    patience=2, 
-    verbose=True)
+print(model())
 
-# Fit funciton to train the model
-def fit(epochs, model, train_dl):   
-    opt = optimizer
-    sched = lr_scheduler
-    loss_func = nn.MSELoss()
-    for epoch in range(epochs):
-        model.train()
-        batch_num = 1
-        for x_trans, x_res, yb in train_dl:
-            # Pass the opt so that funciton will get trained
-            total_loss = 0
-            preds = model(x_trans, x_res)
-            loss = loss_func(preds.squeeze(), yb)
-            loss.backward()
-            opt.step()
-            opt.zero_grad()
-            print('\r', f'batch #{batch_num}: {loss}', end='')
-            batch_num += 1
-            total_loss += loss.item()
-        sched.step(total_loss)
-        print('\n', f'Epoch: ({epoch+1}/{epochs}) Loss = {total_loss}')
-  
-epochs = 100
-fit(epochs, model, train_dl)
+class petDataset_pred(Dataset):
+    def __init__(self, dataframe, trans_transform=None, res_transform=None):
+        self.images = dataframe["file_path"]
+        self.trans_transform = trans_transform
+        self.res_transform = res_transform
+
+    def __len__ (self):
+        return len(self.images)
+    
+    def __getitem__(self, idx):
+        img_path = self.images[idx]
+        image = Image.open(img_path)
+
+        image_trans = self.trans_transform(image)
+
+        image_res = self.res_transform(image)
+        return image_trans, image_res
+
+trans_transform = transforms.Compose([
+    transforms.Resize(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+])
+res_transform = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+
+test_ds = petDataset_pred(df, trans_transform=trans_transform, res_transform=res_transform)
+test_dl = DataLoader(test_ds, batch_size=2, shuffle=False)
