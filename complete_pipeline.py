@@ -23,7 +23,14 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel, AdamW
+import pickle 
+import os
+os.environ['PT_HPU_ENABLE_GENERIC_STREAM'] = '1'
+os.environ['PT_HPU_ENABLE_REFINE_DYNAMIC_SHAPES'] = '0'
 
+import habana_frameworks.torch as ht
+import habana_frameworks.torch.core as htcore
+import habana_frameworks.torch.hpu.graphs as htgraphs
 image = torch.ones([3,456,768])
 device = torch.device("hpu")
 
@@ -39,7 +46,8 @@ from PIL import Image
 import torchvision.transforms as transforms
 import torch
 from transformers import ViTFeatureExtractor, ViTModel, ViTConfig, AutoConfig
-from combined_features import FeatureFusion  # Make sure this import is correct based on your project structure
+# from combined_features import FeatureFusion 
+from combined_features_vit import FeatureFusion
 
 class CustomImageDataset(Dataset):
     def __init__(self, annotations_file, transform=None, target_transform=None):
@@ -93,6 +101,10 @@ for batch in tqdm(dataloader, desc="Processing Batches"):
     vit_features.append(batch[0])
     texts.append(batch[1])
     img_path.append(batch[2])
+
+# Save the lists to a file
+with open('data_vit.pkl', 'wb') as f:
+    pickle.dump({'vit_features': vit_features, 'texts': texts, 'img_path': img_path}, f)
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -153,7 +165,7 @@ class bert(nn.Module):
         regressed_output = self.regressor(dropout_output)
         return regressed_output
 
-model = bert(base_model, vit_feature_size=150528).to(device)
+model = bert(base_model, vit_feature_size=151296).to(device)
 
 dataset = data1(vit_features, texts, tokenizer)
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
@@ -164,8 +176,7 @@ model.train()
 for epoch in range(500):
     print(epoch)
     for batch in dataloader:
-        optimizer.zero_grad()
-
+    
         input_ids = batch['input_ids']
         attention_mask = batch['attention_mask']
         token_type_ids = batch['token_type_ids']
@@ -177,9 +188,10 @@ for epoch in range(500):
             token_type_ids=token_type_ids
         )
         loss = loss_fn(outputs, vit_features.squeeze(1))
-        loss.backward()
-        ht.mark_step()
+        optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        htcore.mark_step()
         optimizer.step()
-        ht.mark_step()
+        htcore.mark_step()
 
         print(f"Epoch {epoch + 1}, Loss: {loss.item()}")
